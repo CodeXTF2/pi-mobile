@@ -11,6 +11,23 @@ get a notification when a turn finishes.
 
 It runs entirely on your local network. There is no cloud service and no account.
 
+<table>
+  <tr>
+    <th>Phone</th>
+    <th>Tablet</th>
+  </tr>
+  <tr>
+    <td width="34%"><img src="docs/screenshots/mobile.png" alt="Pi Mobile on a phone" /></td>
+    <td><img src="docs/screenshots/tablet.png" alt="Pi Mobile on a tablet" /></td>
+  </tr>
+  <tr>
+    <th colspan="2">Desktop browser</th>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/desktop.png" alt="Pi Mobile in a desktop browser" /></td>
+  </tr>
+</table>
+
 ## Using it away from home
 
 Pi Mobile has no relay server. The phone connects straight to your PC, so it only works

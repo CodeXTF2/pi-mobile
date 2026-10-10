@@ -7,6 +7,21 @@ get a notification when a turn finishes.
 
 It runs entirely on your local network. There is no cloud service and no account.
 
+## Using it away from home
+
+Pi Mobile has no relay server. The phone connects straight to your PC, so it only works
+when the phone can reach the PC's IP address directly, such as on the same Wi-Fi.
+
+To use it from elsewhere, put both devices on a private virtual network such as
+[Tailscale](https://tailscale.com) (ZeroTier and WireGuard work too). When you run
+`/mobileauth`, pick the PC's address on that network (for Tailscale, the one starting
+with `100.`) and pair as usual. The certificate covers every address the PC has,
+including the virtual one, but the broker only reads the addresses when it starts. If
+you connect to the virtual network after the broker is running, restart it with
+`npm run broker:stop` and then open a pi session.
+
+Don't forward the broker's ports on your router to expose it to the internet.
+
 > **Disclaimer:** Pi Mobile is an independent, third-party extension for pi. It is not
 > affiliated with, endorsed by, or supported by the pi project or its authors. "pi" is
 > used here only to describe what this extension works with.

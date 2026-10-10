@@ -1,4 +1,8 @@
-# Pi Mobile
+<p align="center">
+  <img src="pwa/icons/logo.svg" alt="Pi Mobile logo" width="120" />
+</p>
+
+<h1 align="center">Pi Mobile</h1>
 
 Pi Mobile lets you follow and drive your [pi](https://pi.dev) sessions from an Android
 phone on the same network as your PC. You can see which sessions are open, read the
@@ -202,4 +206,4 @@ Then restart the broker and pair the phone again.
 
 ## License
 
-No license has been chosen yet.
+MIT. See [LICENSE](LICENSE).

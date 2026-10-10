@@ -261,14 +261,20 @@ function onSettled(msg) {
   if (state.current === msg.sessionId) updateChatHeader(); else renderList();
   if (msg.aborted) return; // notify only on real completion
   // Already looking at this chat: a notification would just be noise.
-  if (!document.hidden && state.current === msg.sessionId) {
+  if (!document.hidden && document.hasFocus() && state.current === msg.sessionId) {
     try { navigator.vibrate && navigator.vibrate(60); } catch {}
     return;
   }
   const title = msg.title || "Pi turn complete";
   const body = msg.body || (meta ? meta.name : "");
-  // App open: float our own banner (Android may not pop a system one for a foreground
-  // app, and this avoids a duplicate). Backgrounded: system notification.
+  // In use (visible and focused): our own banner. Visible but not focused means split
+  // screen with another app in front, so that gets a system notification like the
+  // background case.
+  const inUse = !document.hidden && document.hasFocus();
+  if (notifPermission() === "granted" && !inUse) {
+    notify(title, body, msg.sessionId);
+    return;
+  }
   if (!document.hidden) {
     showHeadsUp(title, body, msg.sessionId);
     try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch {}

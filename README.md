@@ -185,6 +185,10 @@ seconds.
 replaces them with a placeholder. The app warns about this before sending. Switch to a
 model that supports images with `/model`.
 
+**Notifications arrive but don't pop up on screen.** Android decides this per app.
+Long-press a Pi Mobile notification, tap the settings icon and turn on "Pop on screen"
+("Pop-up" style on Samsung).
+
 **The app doesn't rotate.** If Pi Mobile was added to the home screen before landscape
 support, remove it and add it again from Chrome.
 

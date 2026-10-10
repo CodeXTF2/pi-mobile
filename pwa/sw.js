@@ -1,7 +1,7 @@
 // Pi Mobile — service worker
 // Caches the app shell for install/offline and routes notification taps.
 
-const CACHE = "pi-mobile-v26";
+const CACHE = "pi-mobile-v28";
 const SHELL = [
   "/",
   "/index.html",

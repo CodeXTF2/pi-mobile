@@ -488,9 +488,9 @@ code { font-family: var(--mono); }
 .send:not(:disabled):active { transform: scale(.94); }
 .tool-body, .think-body { animation: fadeIn .14s ease; }
 
-/* ---- Landscape phones: short screen, so tighten everything vertical -------- */
-@media (orientation: landscape) and (max-height: 540px) {
-  :root { --topbar-h: 40px; --gutter: 16px; }
+/* ---- Short windows (landscape phones, Android pop-up view, split screen) ----- */
+@media (max-height: 540px) {
+  :root { --topbar-h: 40px; }
   .topbar .title { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 10px; }
   /* typing: the keyboard takes half the screen, so give the header's room to the chat */
   .kb-open .topbar { display: none; }
@@ -504,19 +504,30 @@ code { font-family: var(--mono); }
   .editor-box textarea { min-height: 36px; max-height: 24vh; padding: 6px 2px; }
   .send, .attach-btn { height: 34px; }
   .send { width: 38px; }
+  .attach-tray { padding: 6px var(--gutter) 4px; }
+  .chip { height: 40px; }
+  .chip.img { width: 40px; }
+  .cmd-menu { max-height: 62vh; }
+  .pair { padding: 10px 8px; gap: 2px; }
+  .pair-logo { width: 44px; height: 44px; margin-bottom: 2px; }
+  .pair h1 { font-size: 18px; margin-bottom: 4px; }
+}
+@media (max-height: 540px) and (min-width: 560px) {
+  :root { --gutter: 16px; }
   /* status line: one row instead of two */
   .statusline { display: flex; align-items: center; gap: 12px; padding: 2px var(--gutter) 4px; }
   .sl-info { flex: 1; min-width: 0; }
   .sl-state { flex: none; min-height: 28px; }
   .kb-open .sl-info { display: flex; } /* fits on the single row */
-  .attach-tray { padding: 6px var(--gutter) 4px; }
-  .chip { height: 40px; }
-  .chip.img { width: 40px; }
-  .cmd-menu { max-height: 62vh; }
   .heads-up { left: auto; right: calc(var(--safe-right) + 10px); width: min(480px, calc(100vw - 20px)); }
-  .pair { padding: 10px 8px; gap: 2px; }
-  .pair-logo { width: 44px; height: 44px; margin-bottom: 2px; }
-  .pair h1 { font-size: 18px; margin-bottom: 4px; }
+}
+/* Narrow windows (pop-up view, split screen side by side) */
+@media (max-width: 360px) {
+  :root { --gutter: 10px; }
+  body { font-size: 13px; }
+  .top-logo { display: none; }
+  .sl-model { display: none; }
+  .md pre { font-size: 11.5px; }
 }
 
 /* ---- Wide screens (tablets, landscape on big phones): readable column ------ */

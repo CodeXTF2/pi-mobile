@@ -40,8 +40,30 @@ type Block = {
   isError?: boolean;
   via?: string;
   images?: number;            // user messages: how many images were attached
+  reqId?: string;             // phone slash commands
+  result?: { ok?: boolean; pending?: boolean; text: string; choices?: { label: string; value: string }[] };
+  tokensBefore?: number;      // compaction markers
   ts: number;
 };
+
+// Phone slash commands are saved in the session as custom entries (never sent to the
+// model), so every device and later snapshots show them in the transcript.
+const CMD_ENTRY = "pi-mobile-command";
+
+function compactionToBlock(entry: any): Block {
+  const ts = Date.parse(entry?.timestamp) || Date.now();
+  return { id: entry?.id || nextId("compaction"), role: "compaction", kind: "compaction", text: entry?.summary || "", tokensBefore: entry?.tokensBefore, ts };
+}
+
+function commandEntryToBlock(entry: any): Block | undefined {
+  const d = entry?.data;
+  if (!d || typeof d.text !== "string") return undefined;
+  return {
+    id: `cmd-${d.reqId || entry.id}`, role: "command", kind: "command", reqId: d.reqId, text: d.text,
+    ts: typeof d.ts === "number" ? d.ts : Date.parse(entry.timestamp) || Date.now(),
+    result: { ok: !!d.ok, text: d.result || "", ...(Array.isArray(d.choices) ? { choices: d.choices } : {}) },
+  };
+}
 
 type PhoneImage = { data: string; mimeType: string };
 type PhoneFile = { path: string; name: string; size: number; mimeType?: string };
@@ -401,11 +423,19 @@ export default function (pi: ExtensionAPI) {
     try { entries = ctx.sessionManager.getBranch(); } catch { entries = []; }
     const blocks: Block[] = [];
     for (const entry of entries) {
+      if (entry?.type === "compaction") { blocks.push(compactionToBlock(entry)); continue; }
+      if (entry?.type === "custom" && entry.customType === CMD_ENTRY) {
+        const b = commandEntryToBlock(entry);
+        if (b) blocks.push(b);
+        continue;
+      }
       if (entry?.type !== "message") continue;
       const role = entry.message?.role;
       if (role === "system") continue;
       for (const b of tagMobile(messageToBlocks(entry.message, entry.id))) blocks.push(b);
     }
+    // Commands still running haven't been saved to the session yet.
+    for (const b of liveCommands.values()) if (b.id && !blocks.some((x) => x.id === b.id)) blocks.push(b);
     blocks.sort((a, b) => a.ts - b.ts);
     return blocks;
   };
@@ -425,7 +455,7 @@ export default function (pi: ExtensionAPI) {
 
   // ---- phone-prompt presentation ----
   // A phone prompt is a normal pi user message (same bubble, same history). We only
-  // add a quiet "via phone" footer inside that bubble at render time via a Markdown
+  // add a quiet "via mobile" footer inside that bubble at render time via a Markdown
   // transformer, so the model never sees it. Which prompts came from the phone is
   // persisted as invisible custom entries, so the footer survives a resume/reload.
   const MOBILE_ENTRY = "pi-mobile:prompt";
@@ -451,7 +481,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerMarkdownTransformer((markdown, mctx) => {
       if (mctx.messageType !== "user") return markdown;
       const ts = mobilePrompts.get(norm(markdown));
-      return ts === undefined ? markdown : `${markdown}\n\n*↳ via phone · ${clock(ts)}*`;
+      return ts === undefined ? markdown : `${markdown}\n\n*↳ via mobile · ${clock(ts)}*`;
     });
   }
 
@@ -490,7 +520,7 @@ export default function (pi: ExtensionAPI) {
     } catch {
       try { pi.sendUserMessage(content, { deliverAs: "followUp" }); } catch {}
     }
-    // No toast: the prompt appears as a regular user message (with its "via phone"
+    // No toast: the prompt appears as a regular user message (with its "via mobile"
     // footer), or in pi's own queue while busy. The footer status just notes activity.
     // (The phone shows its own optimistic echo; the real user message streams back
     // via message_end, so we deliberately do NOT broadcast an extra marker block.)
@@ -522,6 +552,7 @@ export default function (pi: ExtensionAPI) {
   ];
   const TERMINAL_ONLY = new Set(["settings", "tree", "scoped-models", "export", "import", "share", "bug", "copy",
     "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "resume", "quit"]);
+  const liveCommands = new Map<string, Block>(); // reqId -> command block not yet saved
   let pendingExec: ((cctx: ExtensionCommandContext, action: string) => Promise<void>) | undefined;
 
   function safeThinking(): string | undefined {
@@ -546,8 +577,18 @@ export default function (pi: ExtensionAPI) {
     if (sessionId !== currentSessionId) return;
     const ctx = lastCtx;
     const m = text.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
-    const reply = (ok: boolean, msg: string, extra: Record<string, unknown> = {}) =>
+    const cmd: Block = { id: `cmd-${reqId}`, role: "command", kind: "command", reqId, text: text.trim(), ts: Date.now(), result: { pending: true, text: "running…" } };
+    liveCommands.set(reqId, cmd);
+    link.send({ t: "block", sessionId, block: cmd });
+    const reply = (ok: boolean, msg: string, extra: Record<string, unknown> = {}) => {
+      const choices = Array.isArray(extra.choices) ? (extra.choices as { label: string; value: string }[]) : undefined;
+      cmd.result = { ok, pending: !!extra.pending, text: msg, ...(choices ? { choices } : {}) };
       link.send({ t: "command-result", sessionId, reqId, command: m?.[1] || "", ok, text: msg, ...extra });
+      // Save the first final result into the session history.
+      if (!extra.pending && liveCommands.delete(reqId)) {
+        try { pi.appendEntry(CMD_ENTRY, { reqId, text: cmd.text, ts: cmd.ts, ok, result: msg, ...(choices ? { choices } : {}) }); } catch {}
+      }
+    };
     if (!m || !ctx) { reply(false, "Not a command."); return; }
     const name = m[1].toLowerCase();
     const args = m[2].trim();
@@ -698,7 +739,9 @@ export default function (pi: ExtensionAPI) {
     if ((e.message as any)?.role === "assistant") link.send({ t: "status", sessionId, status: { context: contextUsage(ctx) } });
   });
 
-  pi.on("session_compact", (_e, ctx) => {
+  pi.on("session_compact", (e, ctx) => {
+    // Covers /compact typed in the terminal and automatic compaction, not just the phone.
+    if (e?.compactionEntry) link.send({ t: "block", sessionId: ctx.sessionManager.getSessionId(), block: compactionToBlock(e.compactionEntry) });
     link.send({ t: "status", sessionId: ctx.sessionManager.getSessionId(), status: { context: contextUsage(ctx) } });
   });
 

@@ -194,9 +194,12 @@ function handle(msg) {
       else renderList();
       break;
     case "snapshot": {
-      // Command rows are phone-side only; keep recent ones across a snapshot refresh.
-      const keepCmds = (state.blocks.get(msg.sessionId) || []).filter((b) => b.kind === "command" && Date.now() - b.ts < 15 * 60000);
-      state.blocks.set(msg.sessionId, [...(msg.blocks || []), ...keepCmds]);
+      // Command rows are part of the snapshot; keep only local ones it doesn't know yet
+      // (sent a moment ago, or from an older extension that doesn't record them).
+      const snap = msg.blocks || [];
+      const known = new Set(snap.filter((b) => b.kind === "command").map((b) => b.reqId));
+      const keepCmds = (state.blocks.get(msg.sessionId) || []).filter((b) => b.kind === "command" && !known.has(b.reqId) && Date.now() - b.ts < 15 * 60000);
+      state.blocks.set(msg.sessionId, [...snap, ...keepCmds]);
       // The snapshot is authoritative: any optimistic echo it contains is already in it,
       // so stop waiting to dedupe (otherwise the next real block would be swallowed).
       state.pending = state.pending.filter((p) => p.sessionId !== msg.sessionId);
@@ -205,6 +208,11 @@ function handle(msg) {
       break;
     }
     case "block": {
+      // A command row we already show (we sent it): just refresh its result.
+      if (msg.block && msg.block.kind === "command") {
+        const mine = (state.blocks.get(msg.sessionId) || []).find((x) => x.kind === "command" && x.reqId === msg.block.reqId);
+        if (mine) { onCommandResult({ sessionId: msg.sessionId, reqId: mine.reqId, ...(msg.block.result || {}) }); break; }
+      }
       // Drop the authoritative copy of a prompt we already echoed optimistically.
       if (isUserish(msg.block) && consumePending(msg.sessionId, stripImageNotes(splitAttach(msg.block.text).text))) break;
       const arr = state.blocks.get(msg.sessionId) || [];
@@ -540,6 +548,7 @@ function renderBlock(b) {
   if (b.kind === "tool_call" || b.kind === "tool_result") return renderTool(b);
   if (b.kind === "thinking") return renderThinking(b);
   if (b.kind === "command") return renderCommand(b);
+  if (b.kind === "compaction") return renderCompaction(b);
   const row = document.createElement("div");
   b._el = row;
 
@@ -566,7 +575,7 @@ function renderBlock(b) {
     if (b.via === "mobile") {
       const via = document.createElement("div");
       via.className = "via";
-      via.textContent = `↳ via phone · ${clock(b.ts)}`;
+      via.textContent = `↳ via mobile · ${clock(b.ts)}`;
       box.appendChild(via);
     }
     row.appendChild(box);
@@ -858,18 +867,47 @@ function runCommand(text) {
 }
 function onCommandResult(msg) {
   const arr = state.blocks.get(msg.sessionId) || [];
-  const b = arr.find((x) => x.kind === "command" && x.reqId === msg.reqId);
+  const rows = arr.filter((x) => x.kind === "command" && x.reqId === msg.reqId);
   if (msg.follow) {
     const s = state.sessions.get(msg.sessionId);
     if (s && s.pid) state.follow = { pid: s.pid, oldId: msg.sessionId, until: Date.now() + 20000 };
   }
-  if (!b) { if (msg.text && state.current === msg.sessionId) toast(msg.text); return; }
-  b.result = { ok: msg.ok, pending: !!msg.pending, text: msg.text || "", choices: msg.choices };
-  const old = b._el; // renderBlock() repoints b._el at the new row, so keep the live one
-  if (old && old.isConnected) {
-    old.replaceWith(renderBlock(b));
-    if (state.stick) scrollToBottom();
+  if (!rows.length) { if (msg.text && state.current === msg.sessionId) toast(msg.text); return; }
+  // Normally one row per command, but update every copy so none is left "running…".
+  for (const b of rows) {
+    b.result = { ok: msg.ok, pending: !!msg.pending, text: msg.text || "", choices: msg.choices };
+    const old = b._el; // renderBlock() repoints b._el at the new row, so keep the live one
+    if (old && old.isConnected) old.replaceWith(renderBlock(b));
   }
+  if (state.stick) scrollToBottom();
+}
+// pi's compaction marker: one line, tap to read the summary the model now works from.
+function renderCompaction(b) {
+  const row = document.createElement("div");
+  row.className = "row compaction";
+  b._el = row;
+  const card = document.createElement("div");
+  card.className = "compact collapsed";
+  const head = document.createElement("div");
+  head.className = "compact-head";
+  const k = b.tokensBefore ? ` from ${Math.round(b.tokensBefore / 1000)}k tokens` : "";
+  head.innerHTML = `<span class="glyph">⟳</span><span></span><span class="chev">▸</span>`;
+  head.children[1].textContent = `Context compacted${k} · ${clock(b.ts)}`;
+  card.appendChild(head);
+  if (b.text) {
+    const body = document.createElement("div");
+    body.className = "compact-body md";
+    if (window.renderMarkdown) body.innerHTML = window.renderMarkdown(b.text); // renderer escapes all source text
+    else { body.style.whiteSpace = "pre-wrap"; body.textContent = b.text; }
+    card.appendChild(body);
+    card.onclick = (e) => {
+      if (e.target.closest("a")) return;
+      const open = card.classList.toggle("collapsed") === false;
+      head.querySelector(".chev").textContent = open ? "▾" : "▸";
+    };
+  } else head.querySelector(".chev").remove();
+  row.appendChild(card);
+  return row;
 }
 function renderCommand(b) {
   const row = document.createElement("div");

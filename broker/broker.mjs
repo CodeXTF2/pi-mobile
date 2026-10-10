@@ -374,7 +374,15 @@ function handleExtMessage(ws, msg, owned) {
       break;
     }
     // slash-command results and command lists go to every phone
-    case "command-result":
+    case "command-result": {
+      const s = sessions.get(msg.sessionId);
+      if (!s) break;
+      // Keep the cached command row current for phones that connect later.
+      const b = s.blocks.find((x) => x.kind === "command" && x.reqId === msg.reqId);
+      if (b) b.result = { ok: msg.ok, pending: !!msg.pending, text: msg.text || "", ...(msg.choices ? { choices: msg.choices } : {}) };
+      broadcastPhones(msg);
+      break;
+    }
     case "commands": {
       if (sessions.has(msg.sessionId)) broadcastPhones(msg);
       break;

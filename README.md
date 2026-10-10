@@ -34,7 +34,7 @@ Don't forward the broker's ports on your router to expose it to the internet.
   Markdown, code blocks and tables are rendered, and tool calls are shown with their
   output.
 - Prompts typed on the phone are sent into the running pi session. They appear in the
-  terminal as normal messages, marked "via phone". While pi is working you can choose
+  terminal as normal messages, marked "via mobile". While pi is working you can choose
   to steer the current turn or queue the prompt for afterwards, or stop the turn.
 - Attachments. Images are sent to the model directly (this needs a model that accepts
   images). Other files, up to 50 MB, are saved on the PC and their path is added to the

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Local runtime data: certificates and private keys, the broker secret,
+# paired devices, uploads and the running broker's pid. Never commit these.
+state/*
+!state/.gitkeep
+
+# Local design scratch (logo options and comparison sheets)
+logo-preview/
+
+# Logs, backups and environment files
+*.log
+npm-debug.log*
+*.bak
+.env
+.env.*
+
+# Editors and OS files
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

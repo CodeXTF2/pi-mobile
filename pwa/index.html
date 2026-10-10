@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!-- resizes-content: the on-screen keyboard shrinks the layout instead of covering it -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#0c0c0c" />
+  <title>Pi Mobile</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="/icons/logo.svg" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <!-- Terminal font; falls back to the system monospace offline -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div id="app" class="app">
+  <!-- Top bar -->
+  <header class="topbar">
+    <button id="backBtn" class="icon-btn back" hidden aria-label="Back to sessions">‹</button>
+    <img class="top-logo" src="/icons/logo.svg" alt="" />
+    <div class="title">
+      <span id="viewTitle">pi mobile</span>
+      <span id="viewSub" class="sub"></span>
+    </div>
+    <div class="top-actions">
+      <button id="notifBtn" class="icon-btn" aria-label="Notifications"></button>
+      <span id="connDot" class="dot off" title="Disconnected"></span>
+    </div>
+  </header>
+
+  <div id="connBanner" class="conn-banner" hidden>⚠ reconnecting to your PC…</div>
+
+  <!-- Pairing screen -->
+  <section id="pairView" class="view grid-bg" hidden>
+    <div class="pair">
+      <div class="pair-brand">
+        <img class="pair-logo" src="/icons/logo.svg" alt="" />
+        <div>
+          <h1>pi mobile</h1>
+          <div class="pair-tag">your pi sessions, on your phone</div>
+        </div>
+      </div>
+
+      <div id="pairBusy" class="pair-state busy" hidden>
+        <span class="spin"></span><span>pairing with your PC…</span>
+      </div>
+      <div id="pairFail" class="pair-state fail" hidden>
+        <div class="ps-title">✕ couldn't pair</div>
+        <div id="pairFailMsg" class="ps-msg"></div>
+      </div>
+
+      <ol class="pair-steps">
+        <li class="ps">
+          <span class="n">1</span>
+          <div class="ps-body"><span class="hl">On your PC</span>, in any pi session, run
+            <div class="cmd"><span class="prompt">❯</span> /mobileauth</div></div>
+        </li>
+        <li class="ps">
+          <span class="n">2</span>
+          <div class="ps-body"><span class="hl">Scan the QR code</span> with this phone's camera</div>
+        </li>
+        <li class="ps">
+          <span class="n">3</span>
+          <div class="ps-body"><span class="hl">Trust your PC</span> by installing the certificate the page offers, then tap <span class="hl">open pi mobile</span></div>
+        </li>
+      </ol>
+      <p id="pairStatus" class="pair-foot dim">Pairing is one-time. After that this app reconnects on its own.</p>
+    </div>
+  </section>
+
+  <!-- Session list -->
+  <section id="listView" class="view" hidden>
+    <div id="notifCard" class="panel notif-card" hidden>
+      <div class="notif-text">
+        <span class="hl">Get notified when a turn finishes</span>
+        <span class="dim">Works while this app is open or in the background.</span>
+      </div>
+      <div class="notif-actions">
+        <button id="notifDismiss" class="btn ghost">later</button>
+        <button id="notifEnable" class="btn primary">enable</button>
+      </div>
+    </div>
+    <div id="listLabel" class="section-label">open sessions</div>
+    <ul id="sessionList" class="session-list"></ul>
+    <div id="emptyList" class="empty" hidden>
+      <p class="dim">No open pi sessions.</p>
+      <div class="cmd"><span class="prompt">❯</span> pi</div>
+      <p class="dim">Start pi in a terminal and it will appear here.</p>
+    </div>
+  </section>
+
+  <!-- Chat view -->
+  <section id="chatView" class="chat" hidden>
+    <div class="transcript-wrap">
+      <div id="transcript" class="transcript"></div>
+      <button id="jumpBtn" class="jump-btn" hidden aria-label="Jump to latest">↓ <span id="jumpText">latest</span></button>
+    </div>
+    <!-- pi-style editor: input between two accent rules, status line beneath -->
+    <div class="editor">
+      <div id="cmdMenu" class="cmd-menu" hidden role="listbox" aria-label="Commands"></div>
+      <div id="visionWarn" class="vision-warn" hidden></div>
+      <div id="attachTray" class="attach-tray" hidden></div>
+      <div class="editor-box">
+        <button id="attachBtn" class="attach-btn" aria-label="Attach images or files">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        </button>
+        <input id="fileInput" type="file" multiple hidden />
+        <textarea id="promptInput" rows="1" placeholder="message pi…" autocomplete="off" enterkeyhint="enter"></textarea>
+        <button id="sendBtn" class="send" aria-label="Send" disabled>⏎</button>
+      </div>
+      <div class="statusline">
+        <div class="sl-row sl-info">
+          <span id="slCwd" class="sl-cwd"></span>
+          <span id="slCtx" class="sl-ctx"></span>
+          <span id="slModel" class="sl-model"></span>
+        </div>
+        <div class="sl-row sl-state">
+          <span id="slState" class="sl-ready">✓ ready</span>
+          <span id="workBar" class="work-ctrls" hidden>
+            <span class="seg" role="group" aria-label="How to send while working">
+              <button class="seg-btn active" data-mode="steer" title="Send now and redirect the current turn">steer</button>
+              <button class="seg-btn" data-mode="followUp" title="Send after the current turn finishes">queue</button>
+            </span>
+            <button id="stopBtn" class="stop-btn" aria-label="Stop the current turn">■ stop</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- In-app heads-up banner for turn-complete while the app is open -->
+<div id="headsUp" class="heads-up" hidden role="status" aria-live="polite">
+  <img class="hu-icon" src="/icons/logo.svg" alt="" />
+  <div class="hu-text">
+    <div id="huTitle" class="hu-title"></div>
+    <div id="huBody" class="hu-body"></div>
+  </div>
+  <span class="hu-open">open ›</span>
+</div>
+
+<script src="/md.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

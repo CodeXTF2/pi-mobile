@@ -1,0 +1,19 @@
+{
+  "name": "pi-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi Mobile: view open pi chats, send prompts, and get turn-complete notifications from an Android PWA over your LAN.",
+  "scripts": {
+    "install-extension": "node install.mjs",
+    "uninstall-extension": "node install.mjs --remove",
+    "broker": "node broker/broker.mjs",
+    "broker:stop": "node broker/broker.mjs --stop",
+    "status": "node broker/broker.mjs --status"
+  },
+  "dependencies": {
+    "node-forge": "1.3.1",
+    "qrcode-terminal": "0.12.0",
+    "ws": "8.18.0"
+  }
+}

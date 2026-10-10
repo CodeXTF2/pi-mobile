@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Pi Mobile mark: "Pi" inside a phone. Frame and letters share one colour layout
+       (coral across the top, blue on the left, yellow on the right); the frame uses darker tones. -->
+  <rect x="10" y="4" width="44" height="56" rx="9" fill="#10151d"/>
+  <path d="M12 21V13A7 7 0 0 1 19 6H45A7 7 0 0 1 52 13V21" fill="none" stroke="#a85e54" stroke-width="4" stroke-linecap="round"/>
+  <path d="M12 26.5V51A7 7 0 0 0 19 58H29" fill="none" stroke="#2c6585" stroke-width="4" stroke-linecap="round"/>
+  <path d="M52 26.5V51A7 7 0 0 1 45 58H35" fill="none" stroke="#a37a2c" stroke-width="4" stroke-linecap="round"/>
+  <rect x="27" y="10" width="10" height="2" rx="1" fill="#3a4556"/>
+  <rect x="27" y="52.5" width="10" height="1.8" rx="0.9" fill="#3a4556"/>
+  <path d="M18.5 17H28.5a8.5 8.5 0 0 1 0 17H24.5v-5.5h4a3 3 0 0 0 0-6H18.5z" fill="#f09082"/>
+  <rect x="18.5" y="22.5" width="6" height="24.5" rx="1.5" fill="#4d9abf"/>
+  <rect x="39.5" y="29" width="6" height="18" rx="1.5" fill="#f1be58"/>
+  <circle cx="42.5" cy="22" r="3.3" fill="#f1be58"/>
+</svg>

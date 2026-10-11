@@ -2,7 +2,7 @@
 // Caches the app shell for install/offline, shows Web Push notifications and routes
 // notification taps.
 
-const CACHE = "pi-mobile-v32";
+const CACHE = "pi-mobile-v33";
 const SHELL = [
   "/",
   "/index.html",

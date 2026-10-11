@@ -117,6 +117,7 @@ function connect() {
     state.backoff = 1000;
     ws.send(JSON.stringify({ t: "subscribe" }));
     sendVisibility();
+    checkForUpdate();
     if (state.current) ws.send(JSON.stringify({ t: "get-snapshot", sessionId: state.current }));
   };
   ws.onclose = (ev) => {
@@ -1267,7 +1268,8 @@ function initUI() {
   }
   document.addEventListener("visibilitychange", () => {
     sendVisibility();
-    if (document.hidden) { saveDraft(); return; }
+    if (document.hidden) { saveDraft(); reloadIfUpdated(); return; }
+    checkForUpdate();
     if (!state.ws || state.ws.readyState > 1) reconnectNow();
     updateNotifUI();
     syncPush(); // permission may have been granted in site settings meanwhile
@@ -1279,9 +1281,28 @@ function initUI() {
   setInterval(() => { if (!state.current && !document.hidden && !$("listView").hidden) renderList(); }, 60000);
 }
 
+// Only while hidden, so the page doesn't jump while being read. Drafts and attachments
+// live only in memory, so also wait until there are none to lose.
+function reloadIfUpdated() {
+  if (!state.updateReady || !document.hidden) return;
+  saveDraft();
+  if (state.drafts.size || [...state.attaches.values()].some((a) => a.length)) return;
+  location.reload();
+}
+// Ask for a new sw.js on every reconnect and return to the app.
+function checkForUpdate() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.getRegistration().then((reg) => reg && reg.update()).catch(() => {});
+}
+
 async function boot() {
   initUI();
   if ("serviceWorker" in navigator) {
+    // An open page keeps running the code it loaded, possibly for days. When a new
+    // service worker takes over (sw.js changed on the PC), reload into the new code.
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener("controllerchange", () => { state.updateReady = true; reloadIfUpdated(); });
+    }
     try { await navigator.serviceWorker.register("/sw.js"); } catch {}
   }
   // The hash is either a pairing code (from the QR) or "open=<id>" (from a notification tap).

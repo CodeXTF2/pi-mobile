@@ -16,6 +16,8 @@ carry the broker `secret` (read from `state/secret`) until the broker sends `wel
 - `{t:"settled", sessionId, aborted:boolean, title, body}` — **full turn complete**
 - `{t:"create-pairing", reqId}` — ask broker to mint a pairing code
 - `{t:"list-devices", reqId}` / `{t:"revoke-device", reqId, deviceId}`
+- `{t:"set-notify", reqId, sessionId, on?}` (toggles without `on`) / `{t:"get-notify", reqId, sessionId}`
+  → `{t:"notify", reqId, sessionId, on, webPush, devices}` — `/notify`: opt a session in to Web Push
 - `{t:"bye", sessionId}`
 
 **broker → extension**
@@ -34,6 +36,11 @@ WSS on `wss://<lanIp>:<httpsPort>/ws?token=<deviceToken>` (token issued at pairi
 **phone → broker**
 - `{t:"subscribe"}` — begin receiving session list + live events
 - `{t:"get-snapshot", sessionId}`
+- `{t:"visibility", visible}` — `visible` means in use (visible and focused); sent on
+  connect and on every visibility or focus change. The broker Web-Pushes turn
+  completions only to phones with no page in use
+- `{t:"push-subscribe", subscription:{endpoint, keys:{p256dh, auth}}}` — the page's
+  `PushSubscription.toJSON()`, sent on every connect once notifications are allowed
 - `{t:"get-commands", sessionId}` → `{t:"commands", sessionId, commands:[{name,description,args?,source}]}`
 - `{t:"run-command", sessionId, text:"/compact …", reqId}` → one or more
   `{t:"command-result", sessionId, reqId, command, ok, text, pending?, choices?:[{label,value}], follow?}`
@@ -47,7 +54,11 @@ WSS on `wss://<lanIp>:<httpsPort>/ws?token=<deviceToken>` (token issued at pairi
 - `{t:"snapshot", sessionId, blocks:[Block], status:Status}`
 - `{t:"block", sessionId, block:Block}`
 - `{t:"status", sessionId, status:Status}`
-- `{t:"settled", sessionId, aborted, title, body}` — triggers a notification
+- `{t:"settled", sessionId, aborted, title, body, push}` — updates the session's state;
+  a page in use shows an in-app banner for sessions with `notify:true`. The page no
+  longer shows system notifications itself (disabled for now); `push:true` means this
+  phone was sent a Web Push
+- `{t:"push-key", key}` — the broker's VAPID public key (not sent when Web Push is off)
 - `{t:"session-removed", sessionId}`
 - `{t:"prompt-echo", sessionId, text}` — confirms our injected prompt landed
 
@@ -64,6 +75,15 @@ HTTPS on `https://<lanIp>:<httpsPort>` (post-trust):
 - `POST /api/upload?name=<file>` (header `x-pi-token`, raw body, ≤50 MB) → `{path, name, size, mimeType}`;
   saved to `state/uploads/<date>/`
 - `GET /api/ping` (token) → `{ok:true}`
+
+## 4. Web Push — broker → push service → phone
+
+When a turn settles in a session opted in with `/notify` (`notify:true` in the
+session list), each paired phone with a push subscription and no visible page gets an
+RFC 8291 (aes128gcm) encrypted push, signed with VAPID (RFC 8292). Payload:
+`{title, body, sessionId}`; headers `TTL: 21600`, `Urgency: high`, and a `Topic`
+derived from the session id so an offline phone gets one message per session. The
+service worker shows it. A 404/410 from the push service deletes the subscription.
 
 ## Types
 

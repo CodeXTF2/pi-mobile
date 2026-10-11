@@ -547,9 +547,26 @@ export default function (pi: ExtensionAPI) {
     { name: "thinking", description: "Set thinking level", args: "[level]" },
     { name: "name", description: "Set session display name", args: "<name>" },
     { name: "session", description: "Show session info and stats" },
+    { name: "notify", description: "Push turn completions even when the app is closed", args: "[on|off]" },
     { name: "new", description: "Start a new session" },
     { name: "reload", description: "Reload extensions, skills, prompts and context files" },
   ];
+  // /notify: an open Pi Mobile page is always notified when a turn finishes. Web Push,
+  // which also reaches a phone whose app is frozen or closed, is opt-in per session.
+  const showNotify = (ctx: ExtensionContext | undefined, on: boolean) => {
+    if (!ctx?.hasUI) return;
+    ctx.ui.setStatus("pi-mobile-notify", on ? ctx.ui.theme.fg("accent", "🔔 push") : undefined);
+  };
+  const setNotify = async (ctx: ExtensionContext | undefined, sessionId: string, arg: string): Promise<string> => {
+    const a = arg.trim().toLowerCase();
+    if (a && a !== "on" && a !== "off") throw new Error("Usage: /notify [on|off]");
+    const res = await link.request({ t: "set-notify", sessionId, ...(a ? { on: a === "on" } : {}) }, 8000);
+    showNotify(ctx, !!res.on);
+    if (!res.on) return "Push notifications off for this session. An open Pi Mobile app still notifies.";
+    if (!res.webPush) return "Push is on for this session, but Web Push is turned off in state/config.json.";
+    if (!res.devices) return "Push is on for this session, but no phone has registered for push yet. Open Pi Mobile and allow notifications.";
+    return `Push notifications on for this session, even when Pi Mobile is closed (${res.devices} phone${res.devices === 1 ? "" : "s"}).`;
+  };
   const TERMINAL_ONLY = new Set(["settings", "tree", "scoped-models", "export", "import", "share", "bug", "copy",
     "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "resume", "quit"]);
   const liveCommands = new Map<string, Block>(); // reqId -> command block not yet saved
@@ -667,6 +684,10 @@ export default function (pi: ExtensionAPI) {
           reply(true, lines.join("\n"));
           return;
         }
+        case "notify": {
+          setNotify(ctx, sessionId, args).then((t) => reply(true, t), fail);
+          return;
+        }
         case "new":
         case "reload": {
           if (name === "new" && !ctx.isIdle()) { reply(false, "pi is busy. Stop the turn first."); return; }
@@ -716,6 +737,8 @@ export default function (pi: ExtensionAPI) {
       link.session = buildSessionInfo(ctx);
       link.send({ t: "hello", role: "session", secret: readSecret(), session: link.session });
       sendSnapshot(ctx);
+      const sid = ctx.sessionManager.getSessionId();
+      link.request({ t: "get-notify", sessionId: sid }, 8000).then((r) => showNotify(ctx, !!r.on), () => {});
     }, 1500);
   });
 
@@ -891,6 +914,17 @@ export default function (pi: ExtensionAPI) {
       pendingExec = undefined;
       if (!run) { cctx.ui.notify("Nothing to run (this command is used by Pi Mobile).", "info"); return; }
       try { await run(cctx, args.trim()); } catch (e: any) { cctx.ui.notify(`Pi Mobile: ${e?.message || e}`, "error"); }
+    },
+  });
+
+  pi.registerCommand("notify", {
+    description: "Pi Mobile: push turn completions for this session even when the app is closed [on|off]",
+    handler: async (args, ctx: ExtensionCommandContext) => {
+      try {
+        ctx.ui.notify(await setNotify(ctx, ctx.sessionManager.getSessionId(), args), "info");
+      } catch (err: any) {
+        ctx.ui.notify(`Pi Mobile: ${err?.message || err}`, "error");
+      }
     },
   });
 

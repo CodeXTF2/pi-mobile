@@ -30,6 +30,7 @@ const state = {
   unseen: 0,                // blocks that arrived while scrolled up
   pendingOpen: null,        // session to open once the session list arrives (notification tap)
   reconnectTimer: null,
+  pushKey: null,            // broker's VAPID key; null when the broker has Web Push off
   bannerTimer: null,
   backoff: 1000,
 };
@@ -115,6 +116,7 @@ function connect() {
     setConn(true);
     state.backoff = 1000;
     ws.send(JSON.stringify({ t: "subscribe" }));
+    sendVisibility();
     if (state.current) ws.send(JSON.stringify({ t: "get-snapshot", sessionId: state.current }));
   };
   ws.onclose = (ev) => {
@@ -229,6 +231,10 @@ function handle(msg) {
     case "settled":
       onSettled(msg);
       break;
+    case "push-key":
+      state.pushKey = msg.key;
+      syncPush();
+      break;
     case "session-removed":
       state.sessions.delete(msg.sessionId);
       state.blocks.delete(msg.sessionId);
@@ -267,20 +273,26 @@ function onSettled(msg) {
   }
   const title = msg.title || "Pi turn complete";
   const body = msg.body || (meta ? meta.name : "");
-  // In use (visible and focused): our own banner. Visible but not focused means split
-  // screen with another app in front, so that gets a system notification like the
-  // background case.
+  // System notifications come only from Web Push, for sessions opted in with /notify.
+  // The broker pushes whenever this page isn't in use (hidden, or visible in split
+  // screen without focus). While it is in use, show our own banner instead.
   const inUse = !document.hidden && document.hasFocus();
-  if (notifPermission() === "granted" && !inUse) {
-    notify(title, body, msg.sessionId);
-    return;
-  }
-  if (!document.hidden) {
+  if (inUse && meta && meta.notify) {
     showHeadsUp(title, body, msg.sessionId);
     try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch {}
-    return;
   }
-  notify(title, body, msg.sessionId);
+  // LAN notifications (shown by this page from the WebSocket) are disabled for now.
+  // They stop once Chrome freezes the page, so Web Push replaced them.
+  // if (notifPermission() === "granted" && !inUse) {
+  //   if (!msg.push) notify(title, body, msg.sessionId); // otherwise the push shows it
+  //   return;
+  // }
+  // if (!document.hidden) {
+  //   showHeadsUp(title, body, msg.sessionId);
+  //   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch {}
+  //   return;
+  // }
+  // if (!msg.push) notify(title, body, msg.sessionId);
 }
 
 // ---------- in-app heads-up banner ----------
@@ -324,31 +336,63 @@ function wireHeadsUp() {
 }
 
 // ---------- notifications ----------
-async function notify(title, body, sessionId) {
-  if (!("Notification" in window) || Notification.permission !== "granted") {
-    if (!document.hidden) toast("✓ " + title);
-    return;
-  }
+// LAN notifications are disabled for now (see onSettled); the service worker shows
+// Web Push notifications instead.
+// async function notify(title, body, sessionId) {
+//   if (!("Notification" in window) || Notification.permission !== "granted") {
+//     if (!document.hidden) toast("✓ " + title);
+//     return;
+//   }
+//   try {
+//     const reg = await navigator.serviceWorker.getRegistration();
+//     const opts = {
+//       body,
+//       tag: sessionId,
+//       renotify: true,          // re-alert (sound/vibrate) on repeat instead of silently replacing
+//       silent: false,
+//       vibrate: [300, 150, 300],
+//       requireInteraction: false,
+//       data: { sessionId },
+//       icon: "/icons/icon-192.png",
+//       badge: "/icons/badge-96.png",    // monochrome status-bar icon
+//     };
+//     if (reg) await reg.showNotification(title, opts);
+//     else new Notification(title, opts);
+//   } catch {}
+// }
+// ---------- web push ----------
+// All system notifications come from the broker as Web Push. It skips a phone whose
+// page is in use (visible and focused), which gets our banner instead, so it needs to
+// know. Visible without focus is split screen with another app in front: push there.
+function sendVisibility() {
+  wsSend({ t: "visibility", visible: document.visibilityState === "visible" && document.hasFocus() });
+}
+function b64uToBytes(s) {
+  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+// Sent on every connect, so the broker always has this phone's current subscription.
+async function syncPush() {
+  if (!state.pushKey || notifPermission() !== "granted" || !("PushManager" in window)) return;
   try {
-    const reg = await navigator.serviceWorker.getRegistration();
-    const opts = {
-      body,
-      tag: sessionId,
-      renotify: true,          // re-alert (sound/vibrate) on repeat instead of silently replacing
-      silent: false,
-      vibrate: [300, 150, 300],
-      requireInteraction: false,
-      data: { sessionId },
-      icon: "/icons/icon-192.png",
-      badge: "/icons/badge-96.png",    // monochrome status-bar icon
-    };
-    if (reg) await reg.showNotification(title, opts);
-    else new Notification(title, opts);
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    const key = b64uToBytes(state.pushKey);
+    const old = sub && sub.options.applicationServerKey && new Uint8Array(sub.options.applicationServerKey);
+    if (sub && old && (old.length !== key.length || old.some((b, i) => b !== key[i]))) {
+      await sub.unsubscribe(); // made for another broker key (e.g. state/ was reset)
+      sub = null;
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    wsSend({ t: "push-subscribe", subscription: sub.toJSON() });
   } catch {}
 }
+
 // Line icons (currentColor) to match the terminal look instead of colour emoji.
 const BELL_PATH = '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
 const BELL_ON = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BELL_PATH}</svg>`;
+// Small bell for sessions opted in to push with /notify.
+const BELL_PUSH = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BELL_PATH}</svg>`;
 const BELL_OFF = `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BELL_PATH}<path d="m2 2 20 20"/></svg>`;
 function notifPermission() {
   return "Notification" in window ? Notification.permission : "unsupported";
@@ -373,6 +417,7 @@ async function enableNotifications() {
     ? "Notifications on ✓ For pop-up banners: long-press a notification → Settings → turn on “Pop on screen”."
     : "Notifications blocked", res === "granted" ? 7000 : 2400);
   updateNotifUI();
+  syncPush();
 }
 
 // ---------- rendering: list ----------
@@ -406,6 +451,7 @@ function renderList(intro = false) {
     li.innerHTML = `
       <div class="s-top">
         <span class="s-name">${esc(s.name)}</span>
+        ${s.notify ? `<span class="s-push" title="Push notifications on (/notify)">${BELL_PUSH}</span>` : ""}
         <span class="s-ago">${st.working ? "" : esc(ago(s.lastActivity))}</span>
       </div>
       <div class="s-cwd" title="${esc(s.cwd || "")}">${esc(tildePath(s.cwd))}</div>
@@ -485,6 +531,9 @@ function updateChatHeader() {
     sl.className = "sl-ready";
     sl.textContent = "✓ ready";
   }
+  const push = $("slPush");
+  push.hidden = !(s && s.notify);
+  if (!push.hidden && !push.innerHTML) push.innerHTML = `${BELL_PUSH} push`;
   // Stop + steer/queue controls are only meaningful while the agent is working.
   const wasHidden = $("workBar").hidden;
   $("workBar").hidden = !st.working;
@@ -1217,11 +1266,16 @@ function initUI() {
     });
   }
   document.addEventListener("visibilitychange", () => {
+    sendVisibility();
     if (document.hidden) { saveDraft(); return; }
     if (!state.ws || state.ws.readyState > 1) reconnectNow();
     updateNotifUI();
+    syncPush(); // permission may have been granted in site settings meanwhile
     if (!state.current) renderList(); // refresh "Xm ago"
   });
+  // Split screen moves focus between apps without a visibility change.
+  window.addEventListener("focus", sendVisibility);
+  window.addEventListener("blur", sendVisibility);
   setInterval(() => { if (!state.current && !document.hidden && !$("listView").hidden) renderList(); }, 60000);
 }
 

@@ -1,7 +1,8 @@
 // Pi Mobile — service worker
-// Caches the app shell for install/offline and routes notification taps.
+// Caches the app shell for install/offline, shows Web Push notifications and routes
+// notification taps.
 
-const CACHE = "pi-mobile-v28";
+const CACHE = "pi-mobile-v32";
 const SHELL = [
   "/",
   "/index.html",
@@ -50,6 +51,25 @@ self.addEventListener("fetch", (event) => {
       return (await caches.match(event.request)) || (await caches.match("/index.html")) || Response.error();
     }
   })());
+});
+
+// Turn-complete pushes from the broker, the only source of system notifications. Sent
+// for sessions with /notify on, while no Pi Mobile page is in use.
+// Chrome requires every push to show a notification, so always show one.
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch {}
+  const sessionId = data.sessionId || "";
+  event.waitUntil(self.registration.showNotification(data.title || "Pi turn complete", {
+    body: data.body || "",
+    tag: sessionId || "pi-mobile",
+    renotify: true,
+    silent: false,
+    vibrate: [300, 150, 300],
+    data: { sessionId },
+    icon: "/icons/icon-192.png",
+    badge: "/icons/badge-96.png",
+  }));
 });
 
 self.addEventListener("notificationclick", (event) => {

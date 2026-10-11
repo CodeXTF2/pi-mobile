@@ -418,6 +418,8 @@ code { font-family: var(--mono); }
 .sl-state { min-height: 30px; }
 .sl-ready { color: var(--success); }
 .sl-working { color: var(--accent); display: inline-flex; align-items: center; gap: 6px; }
+.sl-push, .s-push { color: var(--accent); display: inline-flex; align-items: center; gap: 4px; }
+.s-push { flex: none; align-self: center; }
 .work-ctrls { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
 .seg { display: inline-flex; }
 .seg-btn {

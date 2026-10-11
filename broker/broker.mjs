@@ -33,6 +33,7 @@ import {
   STATE_DIR,
 } from "./lib/paths.mjs";
 import { createCA, issueLeaf, sanSignature } from "./lib/certs.mjs";
+import { loadVapid, sendPush, validSubscription } from "./lib/webpush.mjs";
 
 const argv = process.argv.slice(2);
 
@@ -70,6 +71,19 @@ function isAlive(pid) {
 ensureStateDir();
 const config = loadConfig();
 const SECRET = getOrCreateSecret();
+// Web Push is on unless state/config.json sets "webPush": false (LAN-only mode).
+const VAPID = config.webPush === false ? null : loadVapid(FILES.vapid);
+// Sessions that asked for Web Push with /notify. Push is off unless a session opts in;
+// an open page is notified over the local socket either way. Kept by session id so it
+// survives pi and broker restarts.
+const notifySessions = new Set(readJSON(FILES.notify, { sessions: [] }).sessions || []);
+function setNotify(sessionId, on) {
+  notifySessions.delete(sessionId);
+  if (on) notifySessions.add(sessionId);
+  // Newest last; drop the oldest so sessions that are long gone don't pile up.
+  const list = [...notifySessions].slice(-500);
+  writeJSON(FILES.notify, { sessions: list });
+}
 
 const certs = ensureCerts();
 // Short CA fingerprint (first 8 bytes of SHA-256), shown in pi's QR overlay and on the
@@ -102,6 +116,7 @@ function sessionMeta(s) {
     working: !!s.status?.working,
     lastActivity: s.lastActivity,
     blockCount: s.blocks.length,
+    notify: notifySessions.has(s.meta.id),
   };
 }
 
@@ -198,6 +213,12 @@ class DeviceStore {
     return Object.values(this.map).map(({ id, label, createdAt, lastSeen }) => ({
       id, label, createdAt, lastSeen,
     }));
+  }
+  setPush(id, sub) {
+    const d = this.map[id];
+    if (!d || JSON.stringify(d.push) === JSON.stringify(sub)) return;
+    if (sub) d.push = sub; else delete d.push;
+    this.save();
   }
   revoke(id) {
     if (this.map[id]) {
@@ -334,13 +355,18 @@ function handleExtMessage(ws, msg, owned) {
         s.status = { ...s.status, working: false };
         s.lastActivity = Date.now();
       }
-      broadcastPhones({
+      const settled = {
         t: "settled",
         sessionId: msg.sessionId,
         aborted: !!msg.aborted,
         title: msg.title || "Pi turn complete",
         body: msg.body || "",
-      });
+      };
+      const pushed = settled.aborted ? new Set() : pushSettled(settled);
+      // Tell each page whether its phone got a push, so it doesn't notify a second time.
+      for (const ws of phones) {
+        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ ...settled, push: pushed.has(ws.device.id) }));
+      }
       broadcastPhones({ t: "status", sessionId: msg.sessionId, status: s?.status || { working: false } });
       pushSessions();
       break;
@@ -361,6 +387,19 @@ function handleExtMessage(ws, msg, owned) {
         code,
         expiresInSec: PAIRING_TTL_MS / 1000,
         caFingerprint: CA_FINGERPRINT,
+      }));
+      break;
+    }
+    case "set-notify":
+    case "get-notify": {
+      const id = String(msg.sessionId || "");
+      if (msg.t === "set-notify" && id) {
+        setNotify(id, typeof msg.on === "boolean" ? msg.on : !notifySessions.has(id));
+        pushSessions();
+      }
+      ws.send(JSON.stringify({
+        t: "notify", reqId: msg.reqId, sessionId: id, on: notifySessions.has(id),
+        webPush: !!VAPID, devices: Object.values(devices.map).filter((d) => d.push).length,
       }));
       break;
     }
@@ -559,9 +598,32 @@ httpsServer.on("upgrade", (req, socket, head) => {
   });
 });
 
+// ---- Web Push --------------------------------------------------------------------
+// Web Push is the only source of system notifications (the page no longer shows its
+// own from the WebSocket, since Chrome freezes it a few minutes into the background).
+// For a session opted in with /notify, every phone whose page isn't in use (visible
+// and focused) gets a push. Returns the ids of the devices pushed to.
+function pushSettled(settled) {
+  const out = new Set();
+  if (!VAPID || !notifySessions.has(settled.sessionId)) return out;
+  const visible = new Set([...phones].filter((ws) => ws.visible && ws.readyState === ws.OPEN).map((ws) => ws.device.id));
+  for (const d of Object.values(devices.map)) {
+    if (!d.push || visible.has(d.id)) continue;
+    out.add(d.id);
+    const data = { title: settled.title, body: String(settled.body).slice(0, 500), sessionId: settled.sessionId };
+    sendPush(VAPID, d.push, data, { ttl: 6 * 3600, topic: settled.sessionId }).then((r) => {
+      if (r === "gone") devices.setPush(d.id, null);
+      else if (r === "error") console.error(`[pi-mobile] push to ${d.label} (${d.id}) failed`);
+    });
+  }
+  return out;
+}
+
 function onPhone(ws) {
   phones.add(ws);
+  ws.visible = false; // "in use" (visible and focused), until the page says otherwise
   ws.send(JSON.stringify({ t: "sessions", sessions: sessionsList() }));
+  if (VAPID) ws.send(JSON.stringify({ t: "push-key", key: VAPID.publicKey }));
   ws.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
@@ -569,6 +631,16 @@ function onPhone(ws) {
       case "subscribe":
         ws.send(JSON.stringify({ t: "sessions", sessions: sessionsList() }));
         break;
+      case "visibility":
+        ws.visible = !!msg.visible;
+        break;
+      case "push-subscribe": {
+        const sub = msg.subscription;
+        const ok = !!VAPID && validSubscription(sub);
+        if (ok) devices.setPush(ws.device.id, { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
+        else if (sub === null) devices.setPush(ws.device.id, null);
+        break;
+      }
       case "get-snapshot": {
         const s = sessions.get(msg.sessionId);
         if (s) {

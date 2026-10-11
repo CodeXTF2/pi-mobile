@@ -9,7 +9,9 @@ phone on the same network as your PC. You can see which sessions are open, read 
 transcript as it updates, send prompts and slash commands, attach images or files, and
 get a notification when a turn finishes.
 
-It runs entirely on your local network. There is no cloud service and no account.
+It runs on your local network. There is no account and no server of ours in between.
+The one exception is notifications, which you turn on per session with `/notify`.
+They go through your browser's push service (see [Notifications](#notifications)).
 
 <table>
   <tr>
@@ -65,7 +67,9 @@ Don't forward the broker's ports on your router to expose it to the internet.
   extensions provide. Commands that open a picker in the terminal, such as `/settings`
   or `/resume`, are not available. To send a prompt that starts with a slash, begin it
   with `//`.
-- A notification when a full turn finishes, not after every tool call.
+- A notification when a full turn finishes, not after every tool call, even when the
+  app is closed. Turn it on per session with `/notify`. A bell marks those sessions in
+  the app.
 
 ## Requirements
 
@@ -115,6 +119,7 @@ once. Run `/mobileauth` again for a new one, or to pair another phone.
 | `/mobileauth` | Show a QR code to pair a phone |
 | `/mobilestatus` | List paired phones and revoke one |
 | `/mobileqr` | Hide the pairing QR code if it was shown as a widget |
+| `/notify [on\|off]` | Push this session's turn completions even when the app is closed. Toggles without an argument. |
 
 ## How it works
 
@@ -159,9 +164,35 @@ Some points to be aware of:
   the PC yet at that point. Comparing the fingerprint during pairing protects against
   someone on the network swapping the certificate.
 
-Notifications arrive while the app is open or in the background. Delivery while the app
-is fully closed would need a native app or an internet push service, which this project
-avoids in order to stay local.
+## Notifications
+
+Notifications are off until you turn them on for a session with `/notify`, in pi or
+from the phone. The footer in pi then shows "🔔 push" and the app shows a bell next to
+the session. Run `/notify off` to stop. The setting is kept for the session across
+restarts, in `state/notify.json`.
+
+When such a session finishes a turn, the broker sends a Web Push to every phone that
+isn't using the app at that moment, whether it is in the background, closed or in split
+screen behind another app. On Android that goes through Google's push service
+(Firebase Cloud Messaging), which wakes the phone and delivers it. If you are using the
+app, it shows a banner at the top instead.
+
+The app no longer shows notifications itself over the local connection, because Chrome
+freezes it a few minutes after it goes to the background and the connection stops
+with it.
+
+- The PC needs internet access for this. Everything else still stays on your network.
+- No account or Firebase project is needed. The broker creates its own signing key in
+  `state/vapid.json`.
+- The notification text (the session name and the first 140 characters of the agent's
+  last reply) is encrypted on the PC with a key that only Chrome on your phone holds.
+  Google's push service relays it but can't read it. It does see when each
+  notification is sent, roughly how long it is, and your PC's public IP address.
+- A notification that can't be delivered right away waits up to six hours, and only
+  the latest one per session is kept.
+
+To stay fully local, with no notifications at all, add `"webPush": false` to
+`state/config.json` and restart the broker.
 
 ## Managing the broker
 
@@ -212,6 +243,12 @@ Long-press a Pi Mobile notification, tap the settings icon and turn on "Pop on s
 
 **The app doesn't rotate.** If Pi Mobile was added to the home screen before landscape
 support, remove it and add it again from Chrome.
+
+**No notifications.** Run `/notify` in the session first; notifications are off by
+default. If it shows the bell, check that the PC has internet access and that
+notifications are allowed for Pi Mobile. Open the app once after updating, so it can
+register for push. The broker logs a line when a push fails; run `npm run broker` in a
+terminal to see it.
 
 **The default ports are in use.** Create `state/config.json` with your own values:
 

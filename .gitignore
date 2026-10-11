@@ -1,8 +1,9 @@
 # Dependencies
 node_modules/
 
-# Local runtime data: certificates and private keys, the broker secret,
-# paired devices, uploads and the running broker's pid. Never commit these.
+# Local runtime data: certificates and private keys, the broker secret, the Web
+# Push signing key (vapid.json), paired devices and their push subscriptions,
+# uploads and the running broker's pid. Never commit these.
 state/*
 !state/.gitkeep
 

@@ -21,6 +21,8 @@ export const FILES = {
   leafKey: path.join(STATE_DIR, "server.key"),
   certMeta: path.join(STATE_DIR, "cert-meta.json"),
   devices: path.join(STATE_DIR, "devices.json"),
+  vapid: path.join(STATE_DIR, "vapid.json"), // Web Push signing key
+  notify: path.join(STATE_DIR, "notify.json"), // sessions opted in to Web Push (/notify)
   runtime: path.join(STATE_DIR, "broker.json"), // live {pid, ports, host}
 };
 

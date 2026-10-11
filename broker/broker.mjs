@@ -409,7 +409,14 @@ function handleExtMessage(ws, msg, owned) {
     }
     case "revoke-device": {
       const ok = devices.revoke(msg.deviceId);
+      if (ok) disconnectDevice(msg.deviceId);
       ws.send(JSON.stringify({ t: "revoked", reqId: msg.reqId, deviceId: msg.deviceId, ok }));
+      break;
+    }
+    case "revoke-all-devices": {
+      const ids = Object.keys(devices.map);
+      for (const id of ids) { devices.revoke(id); disconnectDevice(id); }
+      ws.send(JSON.stringify({ t: "revoked", reqId: msg.reqId, count: ids.length, ok: true }));
       break;
     }
     // slash-command results and command lists go to every phone
@@ -591,12 +598,21 @@ httpsServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url, "https://x");
   if (url.pathname !== "/ws") { socket.destroy(); return; }
   const device = devices.validate(url.searchParams.get("token"));
-  if (!device) { socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n"); socket.destroy(); return; }
   phoneWss.handleUpgrade(req, socket, head, (ws) => {
+    // A browser can't read an HTTP 401 on a WebSocket upgrade, only a close code, so an
+    // unknown or revoked token is told with 4401 and the page goes back to pairing.
+    if (!device) { ws.close(4401, "unpaired"); return; }
     ws.device = device;
     onPhone(ws);
   });
 });
+
+// Drop a revoked device's open pages right away; 4401 sends them back to pairing.
+function disconnectDevice(id) {
+  for (const ws of phones) {
+    if (ws.device?.id === id) ws.close(4401, "revoked");
+  }
+}
 
 // ---- Web Push --------------------------------------------------------------------
 // Web Push is the only source of system notifications (the page no longer shows its

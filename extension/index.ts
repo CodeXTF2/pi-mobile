@@ -892,8 +892,14 @@ export default function (pi: ExtensionAPI) {
         const labels = devices.map(
           (d: any) => `${d.label} (${d.id})  last seen ${d.lastSeen ? new Date(d.lastSeen).toLocaleString() : "never"}`
         );
-        const pick = await ctx.ui.select("Paired devices — select to revoke (Esc to close):", [...labels, "Close"]);
-        if (pick && pick !== "Close") {
+        const REVOKE_ALL = `Revoke all (${devices.length})`;
+        const pick = await ctx.ui.select("Paired devices — select to revoke (Esc to close):", [...labels, REVOKE_ALL, "Close"]);
+        if (pick === REVOKE_ALL) {
+          if (await ctx.ui.confirm("Revoke all devices?", `Every paired phone (${devices.length}) will need to pair again with /mobileauth.`)) {
+            const r = await link.request({ t: "revoke-all-devices" }, 8000);
+            ctx.ui.notify(`Revoked ${r.count ?? devices.length} device${(r.count ?? devices.length) === 1 ? "" : "s"}.`, "info");
+          }
+        } else if (pick && pick !== "Close") {
           const idx = labels.indexOf(pick);
           const dev = devices[idx];
           if (dev && (await ctx.ui.confirm("Revoke device?", dev.label))) {

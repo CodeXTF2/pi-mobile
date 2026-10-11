@@ -117,7 +117,7 @@ once. Run `/mobileauth` again for a new one, or to pair another phone.
 | Command | Description |
 |---|---|
 | `/mobileauth` | Show a QR code to pair a phone |
-| `/mobilestatus` | List paired phones and revoke one |
+| `/mobilestatus` | List paired phones and revoke one or all of them |
 | `/mobileqr` | Hide the pairing QR code if it was shown as a widget |
 | `/notify [on\|off]` | Push this session's turn completions even when the app is closed. Toggles without an argument. |
 

@@ -15,7 +15,8 @@ carry the broker `secret` (read from `state/secret`) until the broker sends `wel
 - `{t:"status", sessionId, status:Status}` — working/idle, model, name, context%
 - `{t:"settled", sessionId, aborted:boolean, title, body}` — **full turn complete**
 - `{t:"create-pairing", reqId}` — ask broker to mint a pairing code
-- `{t:"list-devices", reqId}` / `{t:"revoke-device", reqId, deviceId}`
+- `{t:"list-devices", reqId}` / `{t:"revoke-device", reqId, deviceId}` / `{t:"revoke-all-devices", reqId}` — a revoked
+  phone's open pages are closed with code 4401, which sends them back to pairing
 - `{t:"set-notify", reqId, sessionId, on?}` (toggles without `on`) / `{t:"get-notify", reqId, sessionId}`
   → `{t:"notify", reqId, sessionId, on, webPush, devices}` — `/notify`: opt a session in to Web Push
 - `{t:"bye", sessionId}`

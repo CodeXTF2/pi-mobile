@@ -398,6 +398,14 @@ class QrOverlay {
 export default function (pi: ExtensionAPI) {
   let lastCtx: ExtensionContext | undefined;
   let currentSessionId: string | undefined;
+  // A ctx goes stale when pi replaces the session or reloads (newSession, fork, switchSession, reload), and any use
+  // of it then throws. A throw in a timer or a promise callback is uncaught and ends pi, so work that runs later
+  // checks that its session is still the current one (ctxGen) and catches what slips through.
+  let ctxGen = 0;
+  const later = (gen: number, fn: () => void) => {
+    if (gen !== ctxGen) return;
+    try { fn(); } catch { /* the ctx went stale: the next session_start sends fresh state */ }
+  };
 
   const buildSessionInfo = (ctx: ExtensionContext) => {
     const sm = ctx.sessionManager;
@@ -622,7 +630,7 @@ export default function (pi: ExtensionAPI) {
             onComplete: (r) => {
               const after = r.estimatedTokensAfter ? ` → ~${Math.round(r.estimatedTokensAfter / 1000)}k` : "";
               reply(true, `Context compacted (${Math.round(r.tokensBefore / 1000)}k${after} tokens).`);
-              sendSnapshot(lastCtx || ctx);
+              try { sendSnapshot(lastCtx || ctx); } catch { /* stale ctx */ }
             },
             onError: fail,
           });
@@ -720,26 +728,28 @@ export default function (pi: ExtensionAPI) {
   };
 
   link.onRequestSnapshot = (sessionId) => {
-    if (sessionId === currentSessionId && lastCtx) sendSnapshot(lastCtx);
+    if (sessionId === currentSessionId && lastCtx) later(ctxGen, () => sendSnapshot(lastCtx!));
   };
 
   // ---- lifecycle ----
   pi.on("session_start", async (_e, ctx) => {
+    const gen = ++ctxGen;
     lastCtx = ctx;
     currentSessionId = ctx.sessionManager.getSessionId();
     loadMobilePrompts(ctx);
     link.session = buildSessionInfo(ctx);
     await link.ensureBroker();
     await delay(400);
+    if (gen !== ctxGen) return;
     link.connect();
     // Give the socket a moment, then register + snapshot.
-    setTimeout(() => {
+    setTimeout(() => later(gen, () => {
       link.session = buildSessionInfo(ctx);
       link.send({ t: "hello", role: "session", secret: readSecret(), session: link.session });
       sendSnapshot(ctx);
       const sid = ctx.sessionManager.getSessionId();
-      link.request({ t: "get-notify", sessionId: sid }, 8000).then((r) => showNotify(ctx, !!r.on), () => {});
-    }, 1500);
+      link.request({ t: "get-notify", sessionId: sid }, 8000).then((r) => later(gen, () => showNotify(ctx, !!r.on)), () => {});
+    }), 1500);
   });
 
   pi.on("session_info_changed", (e, ctx) => {
@@ -789,6 +799,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", (_e, ctx) => {
+    ctxGen++;                                   // timers and callbacks of this session do nothing from now on
     const sessionId = ctx.sessionManager.getSessionId();
     link.send({ t: "bye", sessionId });
   });
@@ -875,7 +886,7 @@ export default function (pi: ExtensionAPI) {
         ...info,
         "Run /mobileqr to hide this.",
       ]);
-      setTimeout(() => ctx.ui.setWidget("mobile-qr", undefined), (res.expiresInSec || 300) * 1000);
+      setTimeout(() => { try { ctx.ui.setWidget("mobile-qr", undefined); } catch { /* stale ctx */ } }, (res.expiresInSec || 300) * 1000);
     },
   });
 
